@@ -1,0 +1,4 @@
+fastf1
+pandas
+streamlit>=1.37
+plotly>=5.24
