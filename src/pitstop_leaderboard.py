@@ -1,4 +1,4 @@
-# src/pitstop_leaderboard_fastf1.py
+# src/pitstop_leaderboard.py
 import argparse
 from pathlib import Path
 import pandas as pd
@@ -17,21 +17,38 @@ def pit_events_for_race(year: int, gp_name: str) -> pd.DataFrame:
     s.load()
     laps = s.laps.copy()
 
-    pit_in = laps[laps["PitInTime"].notna()][["Driver","DriverNumber","Team","LapNumber","PitInTime"]]
-    pit_in = pit_in.rename(columns={"LapNumber":"LapIn"})
+    # Per driver, align PitIn (this lap) with PitOut (next Lap)
+    laps = laps.sort_values(["DriverNumber", "LapNumber"]).copy()
+    laps["NextPitOutTime"] = laps.groupby("DriverNumber")["PitOutTime"].shift(-1)
+    
+    pit_laps = laps[laps["PitInTime"].notna()].copy()
+    pit_laps["duration_s"] = (pit_laps["NextPitOutTime"] - pit_laps["PitInTime"]).dt.total_seconds()
 
-    pit_out = laps[laps["PitOutTime"].notna()][["Driver","DriverNumber","Team","LapNumber","PitOutTime"]]
-    pit_out = pit_out.rename(columns={"LapNumber":"LapOut"})
+    pit_laps["season"] = year
+    pit_laps["race_name"] = gp_name
+    pit_laps = pit_laps.rename(columns={"LapNumber": "LapIn"})
 
-    pit = pd.merge(pit_in, pit_out, on=["Driver","DriverNumber","Team"], how="inner")
-    pit = pit[pit["LapOut"] == pit["LapIn"] + 1].copy()
+    return pit_laps[[
+        "season", "race_name",
+        "Driver", "DriverNumber", "Team",
+        "LapIn", "duration_s"
+    ]]
 
-    pit["duration_s"] = (pit["PitOutTime"] - pit["PitInTime"]).dt.total_seconds()
-    pit = pit[(pit["duration_s"] > 1.5) & (pit["duration_s"] < 25.0)]
-    pit["season"] = year
-    pit["race_name"] = gp_name
+    # pit_in = laps[laps["PitInTime"].notna()][["Driver","DriverNumber","Team","LapNumber","PitInTime"]]
+    # pit_in = pit_in.rename(columns={"LapNumber":"LapIn"})
 
-    return pit[["season","race_name","Driver","DriverNumber","Team","LapIn","LapOut","duration_s"]]
+    # pit_out = laps[laps["PitOutTime"].notna()][["Driver","DriverNumber","Team","LapNumber","PitOutTime"]]
+    # pit_out = pit_out.rename(columns={"LapNumber":"LapOut"})
+
+    # pit = pd.merge(pit_in, pit_out, on=["Driver","DriverNumber","Team"], how="inner")
+    # pit = pit[pit["LapOut"] == pit["LapIn"] + 1].copy()
+
+    # pit["duration_s"] = (pit["PitOutTime"] - pit["PitInTime"]).dt.total_seconds()
+    # pit = pit[(pit["duration_s"] > 1.5) & (pit["duration_s"] < 25.0)]
+    # pit["season"] = year
+    # pit["race_name"] = gp_name
+
+    # return pit[["season","race_name","Driver","DriverNumber","Team","LapIn","LapOut","duration_s"]]
 
 def build_team_metrics(df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby(["season","Team"])["duration_s"]
