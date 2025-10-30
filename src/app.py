@@ -5,6 +5,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Pit stop leaderboard (FastF1)", layout="wide")
 
+ROOT = Path(_file_).resolve().parents[1]
 TEAM = Path("data/clean/pit_metrics_team.csv")
 DRIVER = Path("data/clean/pit_metrics_driver.csv")
 
