@@ -17,12 +17,15 @@ def pit_events_for_race(year: int, gp_name: str) -> pd.DataFrame:
     s.load()
     laps = s.laps.copy()
 
-    # Per driver, align PitIn (this lap) with PitOut (next Lap)
+    # Per driver, align PitIn (this lap) with PitOut (next lap)
     laps = laps.sort_values(["DriverNumber", "LapNumber"]).copy()
     laps["NextPitOutTime"] = laps.groupby("DriverNumber")["PitOutTime"].shift(-1)
-    
+
     pit_laps = laps[laps["PitInTime"].notna()].copy()
     pit_laps["duration_s"] = (pit_laps["NextPitOutTime"] - pit_laps["PitInTime"]).dt.total_seconds()
+    pit_laps = pit_laps[pit_laps["duration_s"].notna()].copy()
+
+    pit_laps = pit_laps[(pit_laps["duration_s"] >= 1.6) & (pit_laps["duration_s"] <= 10.0)].copy()
 
     pit_laps["season"] = year
     pit_laps["race_name"] = gp_name
@@ -33,6 +36,7 @@ def pit_events_for_race(year: int, gp_name: str) -> pd.DataFrame:
         "Driver", "DriverNumber", "Team",
         "LapIn", "duration_s"
     ]]
+
 
     # pit_in = laps[laps["PitInTime"].notna()][["Driver","DriverNumber","Team","LapNumber","PitInTime"]]
     # pit_in = pit_in.rename(columns={"LapNumber":"LapIn"})
@@ -51,32 +55,17 @@ def pit_events_for_race(year: int, gp_name: str) -> pd.DataFrame:
     # return pit[["season","race_name","Driver","DriverNumber","Team","LapIn","LapOut","duration_s"]]
 
 def build_team_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    g = df.groupby(["season","Team"])["duration_s"]
+    g = df.groupby(["season", "Team"])["duration_s"]
     out = pd.DataFrame({
-        "n_stops": g.size(),
-        "avg_s": g.mean(),
-        "median_s": g.median(),
-        "p90_s": g.quantile(0.90),
-        "p95_s": g.quantile(0.95),
-        "std_s": g.std(ddof=0),
-    }).reset_index()
-    out["consistency_score"] = out["p95_s"] - out["median_s"]
-    out = out.sort_values(["season","avg_s"]).reset_index(drop=True)
-    return out
+        "Stops": g.size(),
+        "Average (s)": g.mean(),
+        "Median (s)": g.median(),
+        "P95 (s)": g.quantile(0.95),
+        "Std Dev (s)": g.std(ddof=0),
+    }).reset_index().rename(columns={"season": "Season"})
+    out["Consistency (P95-Median)"] = out["P95 (s)"] - out["Median (s)"]
+    return out.sort_values(["Season", "Average (s)"]).reset_index(drop=True)
 
-def build_driver_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    g = df.groupby(["season","Driver","Team"])["duration_s"]
-    out = pd.DataFrame({
-        "n_stops": g.size(),
-        "avg_s": g.mean(),
-        "median_s": g.median(),
-        "p90_s": g.quantile(0.90),
-        "p95_s": g.quantile(0.95),
-        "std_s": g.std(ddof=0),
-    }).reset_index()
-    out["consistency_score"] = out["p95_s"] - out["median_s"]
-    out = out.sort_values(["season","avg_s"]).reset_index(drop=True)
-    return out
 
 def run(start: int, end: int, raw_dir: Path, clean_dir: Path, cache_dir: Path):
     enable_cache(cache_dir)
@@ -109,10 +98,9 @@ def run(start: int, end: int, raw_dir: Path, clean_dir: Path, cache_dir: Path):
 
     clean_dir.mkdir(parents=True, exist_ok=True)
     team = build_team_metrics(full)
-    driver = build_driver_metrics(full)
     team.to_csv(clean_dir / "pit_metrics_team.csv", index=False)
-    driver.to_csv(clean_dir / "pit_metrics_driver.csv", index=False)
-    print(f"[OK] Wrote team/driver metrics → {clean_dir}")
+    print(f"[OK] Wrote team metrics → {clean_dir}")
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Pit-stop leaderboard (FastF1) for 2024–2025.")
